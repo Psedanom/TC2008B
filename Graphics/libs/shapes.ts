@@ -95,15 +95,113 @@ function smiley(radius: number) : twgl.Arrays {
     // HINT: You can use polar coordinates to define the positions of vertices,
     // using the radius and an angle. Then convert them to polar coordinates.
 
-    // Sample data for a single yellow triangle. Replace with your values.
-    positionData.push(0, 100);
-    positionData.push(-120, -100);
-    positionData.push(120, -100);
-    colorData.push(0.9, 0.8, 0, 1);
-    colorData.push(0.9, 0.8, 0, 1);
-    colorData.push(0.9, 0.8, 0, 1);
+    // Center
+    positionData.push(0, 0);
+    colorData.push(1, 1, 0, 0.2);
 
-    indexData.push(0, 2, 1);
+    // vertices of circle
+    const steps = 36;
+    for (let i = 0; i < steps; i++) {
+        const angle = (i * 10) * Math.PI / 180;
+        positionData.push(radius * Math.cos(angle), radius * Math.sin(angle));
+        colorData.push(1, 1, 0, 1);
+    }
+    
+
+    for (let i = 0; i < steps; i++) {
+        const current = i + 1;
+        const next = ((i + 1) % steps) + 1;   // wraps the last one back to vertex 1
+        indexData.push(0, current, next);
+    }
+
+    // center of left eye
+    const leftEyeX = -radius * 0.35;
+    const LeftEyeY = radius * 0.35;
+    positionData.push(leftEyeX, LeftEyeY);
+    colorData.push(0, 0, 0, 1);
+
+    // vertices for ellipse eye
+    const segments = 64;
+    const radiusX = radius * 0.1;
+    const radiusY = radius * 0.2;
+
+
+    for (let i = 0; i < segments; i++) {
+        const angle = (i * 360 / segments) * Math.PI / 180;
+        positionData.push(radiusX * Math.cos(angle) + leftEyeX, radiusY * Math.sin(angle) + LeftEyeY); // ellipse equation
+        colorData.push(0, 0, 0, 1);
+    }
+
+    const eyeCenterIndex = positionData.length / 2 - segments - 1; // index of the center of the eye
+    for (let i = 0; i < segments; i++) {
+        const current = eyeCenterIndex + 1 + i;
+        const next = eyeCenterIndex + 1 + ((i + 1) % segments);
+        indexData.push(eyeCenterIndex, current, next);
+    }
+
+    // Right eye
+    const rightEyeX = radius * 0.35;
+    const rightEyeY = radius * 0.35;
+    positionData.push(rightEyeX, rightEyeY);
+    colorData.push(0, 0, 0, 1);
+
+    for (let i = 0; i < segments; i++) {
+        const angle = (i * 360 / segments) * Math.PI / 180;
+        positionData.push(radiusX * Math.cos(angle) + rightEyeX, radiusY * Math.sin(angle) + rightEyeY);
+        colorData.push(0, 0, 0, 1);
+    }
+
+    const rightEyeCenterIndex = positionData.length / 2 - segments - 1;
+    for (let i = 0; i < segments; i++) {
+        const current = rightEyeCenterIndex + 1 + i;
+        const next = rightEyeCenterIndex + 1 + ((i + 1) % segments);
+        indexData.push(rightEyeCenterIndex, current, next);
+    }
+
+    // Mouth: 
+    const mouthX = 0;
+    const mouthY = -radius * 0.2;
+    const mouthRadius = radius * 0.5;
+    const mouthSegments = 32;
+
+    positionData.push(mouthX, mouthY);
+    colorData.push(0, 0, 0, 1);
+
+    // mouthSegments
+    for (let i = 0; i <= mouthSegments; i++) { // <= for last point
+        const angle = Math.PI + (i / mouthSegments) * Math.PI;
+        positionData.push(mouthRadius * Math.cos(angle) + mouthX, mouthRadius * Math.sin(angle) + mouthY);
+        colorData.push(0, 0, 0, 1);
+    }
+
+    const mouthCenterIndex = positionData.length / 2 - (mouthSegments + 1) - 1;
+    for (let i = 0; i < mouthSegments; i++) {
+        const current = mouthCenterIndex + 1 + i;
+        const next = current + 1;  
+        indexData.push(mouthCenterIndex, current, next);
+    }
+
+
+
+
+
+
+    
+    
+    
+    
+    
+    // Sample data for a single yellow triangle. Replace with your values.
+    // positionData.push(0, 100);
+    // positionData.push(-120, -100);
+    // positionData.push(120, -100);
+    
+    
+    // colorData.push(0.9, 0.8, 0, 1);
+    // colorData.push(0.9, 0.8, 0, 1);
+    // colorData.push(0.9, 0.8, 0, 1);
+
+    // indexData.push(0, 2, 1); 
 
 
 

@@ -1,8 +1,8 @@
 /*
  * Script to draw a 2D smiley face, and apply trasnformations to it
  *
- * Gilberto Echeverria
- * 2026-07-16
+ * Pablo Sedano
+ * 11/16/2026
  */
 
 'use strict';
@@ -18,12 +18,26 @@ import { type Color } from '../libs/color.js';
 import vsGLSL from './vs_matrices_vcolor.glsl?raw';
 import fsGLSL from './fs_vertex_color.glsl?raw';
 
+// Options for the drop-down menu that selects the order of the transformations
+const TRANSFORM_ORDER = [
+    'scale -> rotation -> translation',
+    'scale -> translation -> rotation',
+    'translation -> scale -> rotation',
+    'rotation -> translation -> scale',
+    'rotation -> scale -> translation',
+];
 
 /*
  * Subclass of Scene with the particular objects and settings for this example.
  * Specifies the objects that will be used, and the UI operations available.
  */
 class RotationScene extends Scene {
+    // Selected order of the transformations (changed from the GUI)
+    settings = { order: 'scale -> translation -> rotation' };
+
+    // Matrix that accumulates the transformations of the model
+    modelTransforms: Mat3 = M3.identity();
+
     constructor(gl: WebGL2RenderingContext) {
         super(gl, vsGLSL, fsGLSL);
 
@@ -39,40 +53,114 @@ class RotationScene extends Scene {
         pivot.transforms.t.y = gl.canvas.height / 2;
     }
 
+    // Transformations for later use
+
+    // Move the face to the position chosen in the GUI
+    translate() {
+        const model = this.getObject('model');
+        const v2_trans: Vec2 = V2.create(model.transforms.t.x, model.transforms.t.y);
+        this.modelTransforms = M3.multiply(M3.translation(v2_trans), this.modelTransforms);
+    }
+
+    // Scale the face by the factors chosen in the GUI
+    scale() {
+        const model = this.getObject('model');
+        const v2_scale: Vec2 = V2.create(model.transforms.s.x, model.transforms.s.y);
+        this.modelTransforms = M3.multiply(M3.scale(v2_scale), this.modelTransforms);
+    }
+
+    // Rotate the face around the origin of the world
+    rotate() {
+        const model = this.getObject('model');
+        this.modelTransforms = M3.multiply(M3.rotation(model.transforms.rr.z), this.modelTransforms);
+    }
+
+    // Rotate the face around the pivot:
+    // move the pivot to the origin, rotate, and move the pivot back
+    rotateAroundPivot() {
+        const pivot = this.getObject('pivot');
+        const v2_pivot_to_center: Vec2 = V2.create(-pivot.transforms.t.x, -pivot.transforms.t.y);
+        const v2_center_to_pivot: Vec2 = V2.create(pivot.transforms.t.x, pivot.transforms.t.y);
+
+        this.modelTransforms = M3.multiply(M3.translation(v2_pivot_to_center), this.modelTransforms);
+        this.rotate();
+        this.modelTransforms = M3.multiply(M3.translation(v2_center_to_pivot), this.modelTransforms);
+    }
+
+    // Orders of the transformations functions
+
+    scaleRotateTranslate() {
+        this.modelTransforms = M3.identity();
+        this.scale();
+        this.rotateAroundPivot();
+        this.translate();
+    }
+
+    scaleTranslateRotate() {
+        this.modelTransforms = M3.identity();
+        this.scale();
+        this.translate();
+        this.rotateAroundPivot();
+    }
+
+    translateScaleRotate() {
+        this.modelTransforms = M3.identity();
+        this.translate();
+        this.scale();
+        this.rotateAroundPivot();
+    }
+
+    rotateTranslateScale() {
+        this.modelTransforms = M3.identity();
+        this.rotateAroundPivot();
+        this.translate();
+        this.scale();
+    }
+
+    rotateScaleTranslate() {
+        this.modelTransforms = M3.identity();
+        this.rotateAroundPivot();
+        this.scale();
+        this.translate();
+    }
+
     // Method to draw the scene.
     protected render(): void {
         const { gl, programInfo } = this;
         const model = this.getObject('model');
         const pivot = this.getObject('pivot');
 
-        // Vector to the position of the model
-        const v2_trans: Vec2 = V2.create(model.transforms.t.x, model.transforms.t.y);
-        const v2_scale: Vec2 = V2.create(model.transforms.s.x, model.transforms.s.y);
-
-        // Vector to translate the pivot to the center of the world
-        const v2_pivot_to_center: Vec2 = V2.create(-pivot.transforms.t.x,
-                                                   -pivot.transforms.t.y);
         // Vector to translate the pivot back to its original position
         const v2_center_to_pivot: Vec2 = V2.create(pivot.transforms.t.x,
                                                    pivot.transforms.t.y);
 
-        // Transform matrices for the model
-        // TODO: Create the matrices necessary
-
-
-
-        // Create a composite transform matrix
-        let modelTransforms: Mat3 = M3.identity();
-        // TODO: Multiply the matrices in the correct order to obtain the required results
-
-
-
+        // Build the model matrix in the order selected in the GUI
+        switch (this.settings.order) {
+            case 'scale -> rotation -> translation':
+                this.scaleRotateTranslate();
+                break;
+            case 'scale -> translation -> rotation':
+                this.scaleTranslateRotate();
+                break;
+            case 'translation -> scale -> rotation':
+                this.translateScaleRotate();
+                break;
+            case 'rotation -> translation -> scale':
+                this.rotateTranslateScale();
+                break;
+            case 'rotation -> scale -> translation':
+                this.rotateScaleTranslate();
+                break;
+            default:
+                this.scaleTranslateRotate();
+                break;
+        }
 
         gl.useProgram(programInfo.program);
 
         let uniforms = {
             u_resolution: [gl.canvas.width, gl.canvas.height],
-            u_transforms: modelTransforms,
+            u_transforms: this.modelTransforms,
             u_color: model.color,
         };
         twgl.setUniforms(programInfo, uniforms);
@@ -103,6 +191,9 @@ class RotationScene extends Scene {
 
         const gui = new GUI();
 
+        // Drop-down menu to choose the order of the transformations
+        gui.add(this.settings, 'order', TRANSFORM_ORDER).name('Transform order');
+
         const modelFolder = gui.addFolder('Model');
 
         const traFolder = modelFolder.addFolder('Translation');
@@ -131,11 +222,11 @@ class RotationScene extends Scene {
                 model.transforms.s.y = value;
             });
 
-        const colorFolder = modelFolder.addFolder('Color');
-        colorFolder.addColor(model, 'color')
-            .onChange((value: Color) => {
-                model.color = value;
-            });
+        // const colorFolder = modelFolder.addFolder('Color');
+        // colorFolder.addColor(model, 'color')
+        //     .onChange((value: Color) => {
+        //         model.color = value;
+        //     });
 
         const pivotFolder = gui.addFolder('Pivot');
         const pivotTraFolder = pivotFolder.addFolder('Translation');
