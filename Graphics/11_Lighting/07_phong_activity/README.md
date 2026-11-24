@@ -25,43 +25,62 @@ page always renders and you always get visual feedback.
 For every fragment, we compute three terms and sum them:
 
 ```
-color = ambient + diffuse + specular
+outColor = ambientColor + diffuseColor + specularColor
 ```
 
 - **Ambient**: a small constant fraction of the light that reaches every
   point, regardless of orientation.
 - **Diffuse** (Lambert's law): light is scattered proportional to how
-  directly the surface faces the light: `diffuse = max(dot(N, L), 0)`.
+  directly the surface faces the light:
+  `diffuseIntensity = max(dot(normal, surfToLightDirection), 0)`.
 - **Specular** (Phong reflection): a bright highlight in the direction
   in which the light *reflects*. We reflect the light direction about
-  the normal, `R = 2(N·L)N − L`, and measure how close the view direction
-  is to that reflection: `specular = max(dot(R, V), 0)^shininess`.
+  the normal, `reflectionVector = 2 * dot(normal, surfToLightDirection) * normal - surfToLightDirection`,
+  and measure how close the view direction is to that reflection:
+  `specularIntensity = pow(max(dot(reflectionVector, surfToViewDirection), 0), u_shininess)`.
 
-Where:
+Where (the names are the ones used in the shader files):
 
-| Symbol | Meaning | Vector (world space) |
-|--------|---------|----------------------|
-| N | surface normal | from the surface, perpendicular to it |
-| L | light direction | from the fragment toward the light |
-| V | view direction | from the fragment toward the camera |
+| Variable | Meaning | Vector (world space) |
+|----------|---------|----------------------|
+| `normal` | surface normal | from the surface, perpendicular to it |
+| `surfToLightDirection` | light direction | from the fragment toward the light |
+| `surfToViewDirection` | view direction | from the fragment toward the camera |
+| `reflectionVector` | reflected light direction | the light direction mirrored about `normal` |
+
+And the colors (all `vec4`). `diffuseIntensity` and `specularIntensity`
+are scalars (results of `dot`), so scalar * `vec4` scales every channel;
+`vec4 * vec4` multiplies channel by channel (R*R, G*G, B*B, A*A).
+The `*` in the formulas below is that product, never a cross product:
+
+| Uniform | Meaning |
+|---------|---------|
+| `u_ambientColor`, `u_diffuseColor`, `u_specularColor` | material (object) colors |
+| `u_ambientLight`, `u_diffuseLight`, `u_specularLight` | light colors |
+| `u_shininess` | specular exponent of the material |
 
 ### Formulas of the Phong shading model
 
-All vectors are unit vectors in world space. `dot` is the dot product.
+`normal`, `surfToLightDirection`, `surfToViewDirection` and
+`reflectionVector` are unit vectors in world space. `dot(a, b)` is the dot
+product (a scalar), `*` is multiplication by a scalar or component-wise,
+and `pow(x, y)` is x raised to the power y. Each term below is stored in the variable of the same name in
+`fs_phong_activity.glsl` (`ambientColor`, `diffuseColor`, `specularColor`).
 
-**1. Ambient term** (material light × light light, constant over the surface):
+**1. Ambient term** (material color * light color, constant over the surface; `*` is the
+component-wise product of GLSL, **not** a cross product):
 
 ```
-ambient  = ambientMaterial  ×  ambientLight
+ambientColor  = u_ambientColor  *  u_ambientLight
 ```
 
 **2. Diffuse term** (Lambert's law — intensity scales with how directly
 the surface faces the light; negative values are clamped to zero):
 
 ```
-diffuseIntensity = max( dot(N, L), 0 )
+diffuseIntensity = max( dot(normal, surfToLightDirection), 0 )
 
-diffuse  = diffuseIntensity ×  diffuseMaterial  ×  diffuseLight
+diffuseColor  = diffuseIntensity  *  u_diffuseColor  *  u_diffuseLight
 ```
 
 **3. Specular term** (Phong reflection — intensity scales with how close
@@ -69,37 +88,46 @@ the view direction is to the light's reflection direction, sharpened by
 the shininess exponent):
 
 ```
-R = 2 · dot(N, L) · N − L                      (reflection vector)
+reflectionVector = 2 * dot(normal, surfToLightDirection) * normal - surfToLightDirection
 
-specularIntensity = max( dot(R, V), 0 ) ^ shininess
+specularIntensity = pow( max( dot(reflectionVector, surfToViewDirection), 0 ), u_shininess )
 
-specular  = specularIntensity ×  specularMaterial  ×  specularLight
+specularColor  = specularIntensity  *  u_specularColor  *  u_specularLight
 ```
 
 (Conventionally the specular term only contributes when the surface
-faces the light, i.e. only when `dot(N, L) > 0`.)
+faces the light, i.e. only when `dot(normal, surfToLightDirection) > 0`;
+otherwise `specularColor = 0`.)
 
 **4. Final color** (sum of the three independent contributions):
 
 ```
-finalColor = ambient + diffuse + specular
+outColor = ambientColor + diffuseColor + specularColor
 ```
 
 ### GLSL sketch (fragment shader)
 
 ```glsl
-vec3 N = normalize(v_normal);
-vec3 L = normalize(v_surfaceToLight);
-vec3 V = normalize(v_surfaceToView);
+vec3 normal = normalize(v_normal);
+vec3 surfToLightDirection = normalize(v_surfaceToLight);
+vec3 surfToViewDirection = normalize(v_surfaceToView);
 
-vec4 ambient  = u_ambientLight  * u_ambientColor;
-vec4 diffuse  = max(dot(N, L), 0.0) * u_diffuseLight * u_diffuseColor;
+vec4 ambientColor = u_ambientColor * u_ambientLight;
 
-vec3 R = reflect(-L, N);               // R = 2·(N·L)·N − L
-vec4 specular = pow(max(dot(R, V), 0.0), u_shininess)
-               * u_specularLight * u_specularColor;
+float diffuseIntensity = max(dot(normal, surfToLightDirection), 0.0);
+vec4 diffuseColor = diffuseIntensity * u_diffuseColor * u_diffuseLight;
 
-outColor = ambient + diffuse + specular;
+// reflectionVector = 2 * dot(normal, surfToLightDirection) * normal - surfToLightDirection
+vec3 reflectionVector = reflect(-surfToLightDirection, normal);
+
+vec4 specularColor = vec4(0.0);
+if (dot(normal, surfToLightDirection) > 0.0) {
+    float specularIntensity = pow(
+        max(dot(reflectionVector, surfToViewDirection), 0.0), u_shininess);
+    specularColor = specularIntensity * u_specularColor * u_specularLight;
+}
+
+outColor = ambientColor + diffuseColor + specularColor;
 ```
 
 **Key data-flow idea:** the shader *declares* uniforms (input constants
